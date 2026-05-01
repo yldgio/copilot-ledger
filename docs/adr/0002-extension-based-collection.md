@@ -14,5 +14,5 @@ This eliminates the need for tok_est heuristics, prompt_hash dedup, manual git-r
 - Distribution changes from `copilot plugin install` to a setup script or manual copy.
 - **Workspace extensions (`.github/extensions/`) only work inside git repositories.** User-scoped extensions (`~/.copilot/extensions/`) work everywhere. For always-on collection, install to user scope.
 - The hook overwrite bug ([github/copilot-cli#2076](https://github.com/github/copilot-cli/issues/2076)) was reported for extensions registering hooks; our approach uses events (`session.on()`), not hooks. Bug status unverified — may already be fixed.
-- The plugin is still needed for the `/ledger` skill and potentially for MCP/CLI tooling. The extension handles collection only.
+- The extension registers tools and commands via `joinSession({ tools: [...], commands: [...] })`, eliminating the need for a separate plugin. The single extension handles both collection and querying.
 - Shutdown events with `totalPremiumRequests: 0` must be ignored — they fire when the extension reloads into an existing session with zeroed metrics.
