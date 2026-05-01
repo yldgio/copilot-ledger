@@ -30,6 +30,10 @@ let sessionStartTime = null;
 // ─── Tool Handlers ───────────────────────────────────────────────────────────
 
 async function handleLedgerInit(_args, _ctx) {
+  // Attempt detection if session.start didn't provide gitRoot
+  if (!gitRoot) {
+    gitRoot = runtime.detectGitRoot(process.cwd());
+  }
   if (!gitRoot) return { content: "No git root detected. Cannot initialize .ledger/." };
   const dir = path.join(gitRoot, ".ledger");
   const alreadyExisted = fs.existsSync(dir);
