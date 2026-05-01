@@ -432,7 +432,7 @@ async function handleLedgerCommand(context) {
 
 // ─── Session Setup ────────────────────────────────────────────────────────────
 
-const session = joinSession({
+const session = await joinSession({
   tools: [
     {
       name: "ledger-init",
