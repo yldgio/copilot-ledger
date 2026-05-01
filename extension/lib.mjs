@@ -16,12 +16,6 @@ export function safeFileName(user) {
   return safe + ".jsonl";
 }
 
-export function computeRelativeCwd(cwd, gitRoot) {
-  if (!cwd || !gitRoot) return ".";
-  const rel = path.relative(gitRoot, cwd).replace(/\\/g, "/");
-  return rel === "" ? "." : rel;
-}
-
 export function estimateInputTokens(content) {
   return Math.ceil(String(content ?? "").length / 4);
 }
@@ -211,7 +205,7 @@ export function buildShutdownRecord(data, state) {
     v: 1,
     sessionId: state.sessionId,
     repo: state.repo,
-    cwd: state.cwdRelative,
+    cwd: state.repoDir,
     user: state.userId,
     startTime: data?.sessionStartTime ?? state.sessionStartTime,
     endTime: Date.now(),
@@ -231,16 +225,14 @@ export function buildShutdownRecord(data, state) {
   };
 }
 
-export function startLedgerSession({ sessionId, userId, cwd, repo, initialPrompt, detectGitRoot, getLedgerDir, now = Date.now }) {
-  const gitRoot = detectGitRoot(cwd);
+export function startLedgerSession({ sessionId, userId, repoDir, initialPrompt, now = Date.now }) {
   const inputTokensAccum = estimateInputTokens(initialPrompt);
   return {
-    gitRoot,
-    ledgerDir: getLedgerDir(gitRoot),
+    ledgerDir: repoDir ? path.join(repoDir, ".ledger") : null,
     state: {
       sessionId,
-      repo: repo ?? null,
-      cwdRelative: computeRelativeCwd(cwd, gitRoot),
+      repo: repoDir ?? null,
+      repoDir: repoDir ?? null,
       userId,
       sessionStartTime: now(),
       promptCount: initialPrompt ? 1 : 0,
@@ -256,7 +248,7 @@ export function buildPendingRecord(state, now = Date.now) {
     v: 1,
     sessionId: state.sessionId,
     repo: state.repo,
-    cwd: state.cwdRelative,
+    cwd: state.repoDir,
     user: state.userId,
     startTime: state.sessionStartTime,
     lastUpdate: now(),
@@ -280,12 +272,10 @@ export function recordUserMessage(state, transformedContent) {
 
 // ─── Tool Logic ──────────────────────────────────────────────────────────────
 
-export function handleInit({ gitRoot, detectGitRoot, cwd, fsImpl }) {
-  let root = gitRoot;
-  if (!root) root = detectGitRoot(cwd);
-  if (!root) return { gitRoot: null, ledgerDir: null, content: "No git root detected. Cannot initialize .ledger/." };
+export function handleInit({ repoDir, fsImpl }) {
+  if (!repoDir) return { repoDir: null, ledgerDir: null, content: "No repo folder detected. Cannot initialize .ledger/." };
 
-  const dir = path.join(root, ".ledger");
+  const dir = path.join(repoDir, ".ledger");
   const alreadyExisted = fsImpl.existsSync(dir);
   try {
     if (!alreadyExisted) {
@@ -293,14 +283,14 @@ export function handleInit({ gitRoot, detectGitRoot, cwd, fsImpl }) {
       fsImpl.writeFileSync(path.join(dir, ".gitignore"), "*.pending.json\n", "utf8");
     }
     return {
-      gitRoot: root,
+      repoDir,
       ledgerDir: dir,
       content: alreadyExisted
         ? `.ledger/ already exists at ${dir}`
         : `✓ Initialized .ledger/ at ${dir}\n  Added .gitignore to exclude pending files.`,
     };
   } catch (err) {
-    return { gitRoot: root, ledgerDir: null, content: `Failed to initialize .ledger/: ${err.message}` };
+    return { repoDir, ledgerDir: null, content: `Failed to initialize .ledger/: ${err.message}` };
   }
 }
 
@@ -340,21 +330,6 @@ export function createLedgerRuntime(deps = {}) {
     try { return exec("git config --global user.email", { encoding: "utf8" }).trim(); } catch (_) {}
     try { return (osImpl || { userInfo: () => ({ username: "unknown" }) }).userInfo().username; } catch (_) {}
     return "unknown";
-  }
-
-  function detectGitRoot(cwd) {
-    const exec = execSyncImpl;
-    if (!exec) return null;
-    try {
-      return exec("git rev-parse --show-toplevel", { encoding: "utf8", cwd: cwd || undefined }).trim();
-    } catch (_) { return null; }
-  }
-
-  function getLedgerDir(gitRoot) {
-    const fs = fsImpl;
-    if (!fs || !gitRoot) return null;
-    const dir = path.join(gitRoot, ".ledger");
-    return fs.existsSync(dir) ? dir : null;
   }
 
   function recoverOrphans(dir, userId) {
@@ -399,5 +374,5 @@ export function createLedgerRuntime(deps = {}) {
     }
   }
 
-  return { getUserId, detectGitRoot, getLedgerDir, recoverOrphans };
+  return { getUserId, recoverOrphans };
 }

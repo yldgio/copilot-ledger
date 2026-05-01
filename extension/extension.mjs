@@ -19,12 +19,12 @@ const runtime = createLedgerRuntime({ fs, execSync, os });
 // ─── State ───────────────────────────────────────────────────────────────────
 
 const userId = runtime.getUserId();
-let gitRoot = null;
+let repoDir = null;
 let ledgerDir = null;
 let usage = {
   sessionId: null,
   repo: null,
-  cwdRelative: ".",
+  repoDir: null,
   userId,
   sessionStartTime: null,
   promptCount: 0,
@@ -38,12 +38,10 @@ let usage = {
 
 async function handleLedgerInit(_args, _ctx) {
   const result = handleInit({
-    gitRoot,
-    detectGitRoot: (cwd) => runtime.detectGitRoot(cwd),
-    cwd: process.cwd(),
+    repoDir,
     fsImpl: fs,
   });
-  if (result.gitRoot) gitRoot = result.gitRoot;
+  if (result.repoDir) repoDir = result.repoDir;
   if (result.ledgerDir) ledgerDir = result.ledgerDir;
   return { content: result.content };
 }
@@ -54,7 +52,7 @@ async function handleLedgerSummary(args, _ctx) {
   const filterRepo = args?.repo ?? null;
 
   const dir = ledgerDir;
-  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   let records = filterByDays(readRecords(dir, fs), days);
   if (filterRepo) records = records.filter(r => r.repo === filterRepo);
@@ -73,7 +71,7 @@ async function handleLedgerUser(args, _ctx) {
   const format = args?.format ?? "text";
 
   const dir = ledgerDir;
-  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   let records = filterByDays(readRecords(dir, fs), days);
   records = records.filter(r => r.user === targetUser);
@@ -91,7 +89,7 @@ async function handleLedgerTeam(args, _ctx) {
   const format = args?.format ?? "text";
 
   const dir = ledgerDir;
-  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   const records = filterByDays(readRecords(dir, fs), days);
 
@@ -144,7 +142,7 @@ async function handleLedgerCommand(context) {
 
   if (/^top repos this week$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir, fs), 7);
     const byRepo = {};
     for (const r of records) {
@@ -164,7 +162,7 @@ async function handleLedgerCommand(context) {
 
   if (/^top users this week$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir, fs), 7);
     const byUser = {};
     for (const r of records) {
@@ -184,7 +182,7 @@ async function handleLedgerCommand(context) {
 
   if (/^status$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     let fileCount = 0, recordCount = 0, pendingCount = 0;
     try {
       const files = fs.readdirSync(dir);
@@ -207,21 +205,18 @@ function initializeLedgerSession(data = {}) {
   const started = startLedgerSession({
     sessionId: data?.sessionId ?? session?.sessionId ?? null,
     userId,
-    cwd: data?.cwd ?? process.cwd(),
-    repo: data?.repository ?? null,
+    repoDir: data?.cwd ?? null,
     initialPrompt: data?.initialPrompt ?? "",
-    detectGitRoot: runtime.detectGitRoot,
-    getLedgerDir: runtime.getLedgerDir,
   });
-  gitRoot = started.gitRoot;
+  repoDir = data?.cwd ?? repoDir;
   ledgerDir = started.ledgerDir;
   usage = started.state;
 }
 
 async function recoverOrWarn() {
-  if (ledgerDir) {
+  if (ledgerDir && fs.existsSync(ledgerDir)) {
     runtime.recoverOrphans(ledgerDir, userId);
-  } else if (gitRoot && session) {
+  } else if (repoDir && session) {
     await session.log("[copilot-ledger] .ledger/ not found. Run /ledger init to start tracking usage.", { level: "warning" });
   }
 }
@@ -291,7 +286,6 @@ session = await joinSession({
   },
 });
 
-initializeLedgerSession({ sessionId: session.sessionId, cwd: process.cwd() });
 await recoverOrWarn();
 
 // ─── Event Handlers ───────────────────────────────────────────────────────────
@@ -306,7 +300,7 @@ session.on("assistant.message", (event) => {
 
 session.on("session.idle", (_event) => {
   usage.sessionId = session.sessionId ?? usage.sessionId;
-  if (!ledgerDir || !usage.sessionId) return;
+  if (!ledgerDir || !fs.existsSync(ledgerDir) || !usage.sessionId) return;
   const pending = buildPendingRecord(usage);
   try {
     fs.writeFileSync(path.join(ledgerDir, `${usage.sessionId}.pending.json`), JSON.stringify(pending), "utf8");
@@ -318,7 +312,7 @@ session.on("session.shutdown", (event) => {
 
   // Dedup: skip if no premium activity (e.g. extension reload)
   if ((data?.totalPremiumRequests ?? 0) === 0) return;
-  if (!ledgerDir) return;
+  if (!ledgerDir || !fs.existsSync(ledgerDir)) return;
 
   usage.sessionId = session.sessionId ?? usage.sessionId;
   const record = buildShutdownRecord(data, usage);

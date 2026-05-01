@@ -112,9 +112,8 @@ interface StartData {
 
 ```ts
 interface WorkingDirectoryContext {
-  cwd: string;
-  gitRoot?: string;
-  repository?: string;       // "owner/name" from git remote
+  cwd: string;               // repo folder supplied by onSessionStart
+  repository?: string;       // unused by ledger storage
   repositoryHost?: string;   // "github.com" etc.
   branch?: string;
   baseCommit?: string;
@@ -355,14 +354,13 @@ Written to `.ledger/{sessionId}.pending.json` during active sessions:
 import { joinSession } from "@github/copilot-sdk/extension";
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, appendFileSync, unlinkSync, readdirSync, existsSync, mkdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { homedir, userInfo } from "node:os";
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let sessionId = null;
 let repo = null;
-let cwd = ".";
-let gitRoot = null;
+let repoDir = null;
 let startTime = null;
 let promptCount = 0;
 let outputTokensAccum = 0;
@@ -385,18 +383,6 @@ function getUserId() {
 
 function safeFileName(user) {
   return user.replace("@", "_") + ".jsonl";
-}
-
-function getLedgerDir(gitRootPath) {
-  if (!gitRootPath) return null;
-  const dir = join(gitRootPath, ".ledger");
-  return existsSync(dir) ? dir : null;
-}
-
-function computeRelativeCwd(actualCwd, gitRootPath) {
-  if (!gitRootPath) return ".";
-  const rel = relative(gitRootPath, actualCwd);
-  return rel === "" ? "." : rel.replace(/\\/g, "/");
 }
 
 function flattenModelMetrics(sdkMetrics) {
@@ -453,8 +439,8 @@ const ledgerInitTool = {
   parameters: {},
   skipPermission: true,
   handler: async (args, context) => {
-    if (!gitRoot) return { content: "Error: not in a git repository." };
-    const dir = join(gitRoot, ".ledger");
+    if (!repoDir) return { content: "Error: repo folder not available yet." };
+    const dir = join(repoDir, ".ledger");
     if (existsSync(dir)) return { content: ".ledger/ already exists." };
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, ".gitignore"), "*.pending.json\n");
@@ -587,17 +573,16 @@ const session = joinSession({
 // ─── Crash Recovery ──────────────────────────────────────────────────────────
 // Runs once at extension load time
 userId = getUserId();
-// gitRoot/ledgerDir set on extension load/reload and refreshed by onSessionStart
+// repoDir/ledgerDir set from onSessionStart(data.cwd)
 
 // ─── Event Listeners ─────────────────────────────────────────────────────────
 
 hooks.onSessionStart = (data) => {
   sessionId = data.sessionId;
   startTime = Date.now();
-  gitRoot = detectGitRoot(data.cwd);
-  repo = data.repository || gitRoot || null;
-  cwd = computeRelativeCwd(data.cwd, gitRoot);
-  ledgerDir = getLedgerDir(gitRoot);
+  repoDir = data.cwd;
+  repo = repoDir;
+  ledgerDir = join(repoDir, ".ledger");
   if (data.initialPrompt) {
     promptCount++;
     inputTokensAccum += estimateTokens(data.initialPrompt);
@@ -607,7 +592,7 @@ hooks.onSessionStart = (data) => {
   recoverOrphans(ledgerDir);
 
   // Nudge if .ledger/ doesn't exist
-  if (gitRoot && !ledgerDir) {
+  if (repoDir && !existsSync(ledgerDir)) {
     process.stderr.write("[copilot-ledger] No .ledger/ found. Run /ledger init to start tracking.\n");
   }
 };
@@ -628,7 +613,7 @@ session.on("session.idle", (event) => {
     v: 1,
     sessionId,
     repo,
-    cwd,
+    cwd: repoDir,
     user: userId,
     startTime,
     lastUpdate: Date.now(),
@@ -735,9 +720,9 @@ copilot-ledger/
 - `install.ps1` — Windows installer
 
 **Scope**: Everything in §7 (full pseudocode), including:
-- All helper functions (`getUserId`, `safeFileName`, `getLedgerDir`, `computeRelativeCwd`, `flattenModelMetrics`, `recoverOrphans`)
+- All helper functions (`getUserId`, `safeFileName`, `flattenModelMetrics`, `recoverOrphans`)
 - All state variables
-- All event handlers (`session.start`, `user.message`, `assistant.message`, `session.idle`, `session.shutdown`)
+- All event handlers (`onSessionStart`, `user.message`, `assistant.message`, `session.idle`, `session.shutdown`)
 - All tools (`ledger-init`, `ledger-summary`, `ledger-user`, `ledger-team`)
 - `/ledger` command with subcommand parsing
 - All three output formatters (text, csv, html)
@@ -751,8 +736,6 @@ copilot-ledger/
 |----------|-----------|----------|
 | `getUserId()` | `() → string` | `git config --global user.email` → `git config user.email` → `os.userInfo().username` |
 | `safeFileName(user)` | `(string) → string` | Replace `@` with `_`, append `.jsonl` |
-| `getLedgerDir(gitRoot)` | `(string\|null) → string\|null` | Join gitRoot + `.ledger/`, return null if doesn't exist |
-| `computeRelativeCwd(cwd, gitRoot)` | `(string, string) → string` | `path.relative()`, normalize separators to `/`, default `"."` |
 | `flattenModelMetrics(sdkMetrics)` | `(object) → object` | Flatten `{requests: {count, cost}, usage: {...}}` → `{requests, cost, inputTokens, ...}` |
 | `recoverOrphans(dir)` | `(string\|null) → void` | Scan `*.pending.json`, promote to JSONL with `shutdownType: "recovered"`, delete pending |
 | `readRecords(filterRepo, days)` | `(string\|null, number\|null) → object[]` | Read all JSONL in ledgerDir, filter by repo/days |

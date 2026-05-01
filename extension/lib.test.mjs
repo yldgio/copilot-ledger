@@ -23,29 +23,6 @@ describe("safeFileName", () => {
   });
 });
 
-describe("computeRelativeCwd", () => {
-  it("returns . when cwd equals gitRoot", async () => {
-    const { computeRelativeCwd } = await import("./lib.mjs");
-    expect(computeRelativeCwd("/repo", "/repo")).toBe(".");
-  });
-
-  it("returns relative path with forward slashes", async () => {
-    const { computeRelativeCwd } = await import("./lib.mjs");
-    const result = computeRelativeCwd("/repo/src/deep", "/repo");
-    expect(result).toBe("src/deep");
-  });
-
-  it("returns . when cwd is null", async () => {
-    const { computeRelativeCwd } = await import("./lib.mjs");
-    expect(computeRelativeCwd(null, "/repo")).toBe(".");
-  });
-
-  it("returns . when gitRoot is null", async () => {
-    const { computeRelativeCwd } = await import("./lib.mjs");
-    expect(computeRelativeCwd("/repo/src", null)).toBe(".");
-  });
-});
-
 describe("estimateInputTokens", () => {
   it("estimates one token per four transformed-content characters", async () => {
     const { estimateInputTokens } = await import("./lib.mjs");
@@ -265,7 +242,7 @@ describe("recoverOrphans", () => {
 describe("buildShutdownRecord", () => {
   it("builds a v1 record from shutdown event data", async () => {
     const { buildShutdownRecord } = await import("./lib.mjs");
-    const state = { sessionId: "s1", repo: "owner/repo", cwdRelative: "src", userId: "dev@test.com", sessionStartTime: 1000, promptCount: 5 };
+    const state = { sessionId: "s1", repo: "/repo", repoDir: "/repo", userId: "dev@test.com", sessionStartTime: 1000, promptCount: 5 };
     const data = {
       totalPremiumRequests: 3,
       totalApiDurationMs: 2000,
@@ -284,7 +261,7 @@ describe("buildShutdownRecord", () => {
 
   it("handles filesModified as number", async () => {
     const { buildShutdownRecord } = await import("./lib.mjs");
-    const state = { sessionId: "s1", repo: null, cwdRelative: ".", userId: "dev", sessionStartTime: 0, promptCount: 0 };
+    const state = { sessionId: "s1", repo: null, repoDir: null, userId: "dev", sessionStartTime: 0, promptCount: 0 };
     const data = { totalPremiumRequests: 1, codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: 5 } };
     const record = buildShutdownRecord(data, state);
     expect(record.codeChanges.filesModified).toBe(5);
@@ -292,25 +269,21 @@ describe("buildShutdownRecord", () => {
 });
 
 describe("startLedgerSession", () => {
-  it("derives git root, ledger dir, relative cwd, and initial prompt counters in one place", async () => {
+  it("derives ledger dir directly from the repo folder and initializes counters", async () => {
     const { startLedgerSession } = await import("./lib.mjs");
     const result = startLedgerSession({
       sessionId: "s1",
       userId: "dev@test.com",
-      cwd: "/repo/src",
-      repo: "owner/repo",
+      repoDir: "D:\\repo",
       initialPrompt: "hello",
-      detectGitRoot: vi.fn().mockReturnValue("/repo"),
-      getLedgerDir: vi.fn().mockReturnValue("/repo/.ledger"),
       now: () => 1234,
     });
 
-    expect(result.gitRoot).toBe("/repo");
-    expect(result.ledgerDir).toBe("/repo/.ledger");
+    expect(result.ledgerDir).toBe("D:\\repo\\.ledger");
     expect(result.state).toMatchObject({
       sessionId: "s1",
-      repo: "owner/repo",
-      cwdRelative: "src",
+      repo: "D:\\repo",
+      repoDir: "D:\\repo",
       userId: "dev@test.com",
       sessionStartTime: 1234,
       promptCount: 1,
@@ -320,20 +293,19 @@ describe("startLedgerSession", () => {
     });
   });
 
-  it("does not use git root as repo identity when repository metadata is missing", async () => {
+  it("leaves ledger dir and repo null when no repo folder is available", async () => {
     const { startLedgerSession } = await import("./lib.mjs");
     const result = startLedgerSession({
       sessionId: "s1",
       userId: "dev@test.com",
-      cwd: "/repo",
-      repo: null,
+      repoDir: null,
       initialPrompt: "",
-      detectGitRoot: vi.fn().mockReturnValue("/repo"),
-      getLedgerDir: vi.fn().mockReturnValue("/repo/.ledger"),
       now: () => 1234,
     });
 
+    expect(result.ledgerDir).toBeNull();
     expect(result.state.repo).toBeNull();
+    expect(result.state.repoDir).toBeNull();
   });
 });
 
@@ -342,8 +314,8 @@ describe("buildPendingRecord", () => {
     const { buildPendingRecord } = await import("./lib.mjs");
     const record = buildPendingRecord({
       sessionId: "s1",
-      repo: "owner/repo",
-      cwdRelative: ".",
+      repo: "/repo",
+      repoDir: "/repo",
       userId: "dev@test.com",
       sessionStartTime: 1000,
       promptCount: 2,
@@ -354,8 +326,8 @@ describe("buildPendingRecord", () => {
     expect(record).toEqual({
       v: 1,
       sessionId: "s1",
-      repo: "owner/repo",
-      cwd: ".",
+      repo: "/repo",
+      cwd: "/repo",
       user: "dev@test.com",
       startTime: 1000,
       lastUpdate: 2000,
@@ -461,31 +433,6 @@ describe("readRecords", () => {
     const records = readRecords("/fake", mockFs);
     expect(records).toHaveLength(1);
     expect(mockFs.readFileSync).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ─── getLedgerDir ────────────────────────────────────────────────────────────
-
-describe("getLedgerDir", () => {
-  it("returns dir path when .ledger exists", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const mockFs = { existsSync: vi.fn().mockReturnValue(true) };
-    const runtime = createLedgerRuntime({ fs: mockFs });
-    const result = runtime.getLedgerDir("/repo");
-    expect(result).toContain(".ledger");
-  });
-
-  it("returns null when .ledger does not exist", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const mockFs = { existsSync: vi.fn().mockReturnValue(false) };
-    const runtime = createLedgerRuntime({ fs: mockFs });
-    expect(runtime.getLedgerDir("/repo")).toBeNull();
-  });
-
-  it("returns null when gitRoot is null", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const runtime = createLedgerRuntime({ fs: {} });
-    expect(runtime.getLedgerDir(null)).toBeNull();
   });
 });
 
@@ -603,45 +550,30 @@ describe("recoverOrphans edge cases", () => {
 // ─── handleInit ──────────────────────────────────────────────────────────────
 
 describe("handleInit", () => {
-  it("uses provided gitRoot when available", async () => {
+  it("uses the repo folder directly", async () => {
     const { handleInit } = await import("./lib.mjs");
     const mockFs = {
       existsSync: vi.fn().mockReturnValue(false),
       mkdirSync: vi.fn(),
       writeFileSync: vi.fn(),
     };
-    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    const result = handleInit({ repoDir: "/repo", fsImpl: mockFs });
     expect(result.content).toContain("✓ Initialized .ledger/");
     expect(result.ledgerDir).toContain(".ledger");
     expect(mockFs.mkdirSync).toHaveBeenCalled();
   });
 
-  it("falls back to detectGitRoot when gitRoot is null", async () => {
+  it("returns error when no repo folder is available", async () => {
     const { handleInit } = await import("./lib.mjs");
-    const mockFs = {
-      existsSync: vi.fn().mockReturnValue(false),
-      mkdirSync: vi.fn(),
-      writeFileSync: vi.fn(),
-    };
-    const detectGitRoot = vi.fn().mockReturnValue("/detected/repo");
-    const result = handleInit({ gitRoot: null, detectGitRoot, cwd: "/detected/repo/src", fsImpl: mockFs });
-    expect(detectGitRoot).toHaveBeenCalledWith("/detected/repo/src");
-    expect(result.gitRoot).toBe("/detected/repo");
-    expect(result.content).toContain("✓ Initialized .ledger/");
-  });
-
-  it("returns error when no git root can be found", async () => {
-    const { handleInit } = await import("./lib.mjs");
-    const detectGitRoot = vi.fn().mockReturnValue(null);
-    const result = handleInit({ gitRoot: null, detectGitRoot, cwd: "/tmp", fsImpl: {} });
-    expect(result.content).toBe("No git root detected. Cannot initialize .ledger/.");
-    expect(result.gitRoot).toBeNull();
+    const result = handleInit({ repoDir: null, fsImpl: {} });
+    expect(result.content).toBe("No repo folder detected. Cannot initialize .ledger/.");
+    expect(result.repoDir).toBeNull();
   });
 
   it("reports already exists when .ledger/ is present", async () => {
     const { handleInit } = await import("./lib.mjs");
     const mockFs = { existsSync: vi.fn().mockReturnValue(true) };
-    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    const result = handleInit({ repoDir: "/repo", fsImpl: mockFs });
     expect(result.content).toContain("already exists");
   });
 
@@ -651,7 +583,7 @@ describe("handleInit", () => {
       existsSync: vi.fn().mockReturnValue(false),
       mkdirSync: vi.fn().mockImplementation(() => { throw new Error("permission denied"); }),
     };
-    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    const result = handleInit({ repoDir: "/repo", fsImpl: mockFs });
     expect(result.content).toContain("Failed to initialize");
     expect(result.content).toContain("permission denied");
   });
@@ -701,26 +633,3 @@ describe("getUserId", () => {
   });
 });
 
-// ─── detectGitRoot ───────────────────────────────────────────────────────────
-
-describe("detectGitRoot", () => {
-  it("returns trimmed git root path", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const mockExecSync = vi.fn().mockReturnValue("/home/user/repo\n");
-    const runtime = createLedgerRuntime({ execSync: mockExecSync });
-    expect(runtime.detectGitRoot("/home/user/repo/src")).toBe("/home/user/repo");
-  });
-
-  it("returns null when not in a git repo", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const mockExecSync = vi.fn().mockImplementation(() => { throw new Error("not a git repo"); });
-    const runtime = createLedgerRuntime({ execSync: mockExecSync });
-    expect(runtime.detectGitRoot("/tmp")).toBeNull();
-  });
-
-  it("returns null when no execSync provided", async () => {
-    const { createLedgerRuntime } = await import("./lib.mjs");
-    const runtime = createLedgerRuntime({});
-    expect(runtime.detectGitRoot("/tmp")).toBeNull();
-  });
-});

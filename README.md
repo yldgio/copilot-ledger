@@ -118,7 +118,7 @@ All data lives in `.ledger/` at the git root. Each user gets their own `.jsonl` 
 ## How It Works
 
 1. Extension loads when Copilot CLI starts
-2. On extension load/reload and in the `onSessionStart` hook: captures session ID, repo, working directory, and the initial prompt when present
+2. In the `onSessionStart` hook: captures session ID, repo folder (`data.cwd`), and the initial prompt when present
 3. On each `user.message`: increments the prompt counter and estimates input tokens from `transformedContent`
 4. On `assistant.message`: accumulates SDK-provided `outputTokens`
 5. On `session.idle`: writes a pending checkpoint (gitignored as `*.pending.json`)
