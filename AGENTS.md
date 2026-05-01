@@ -6,6 +6,8 @@ a **GitHub Copilot CLI plugin** — named `copilot-ledger` — that transparentl
 
 Keep the docs updated. every change to the codebase should be reflected in the documentation. If you add a new feature, update the README and any relevant docstrings. If you fix a bug, update the troubleshooting guide.
 
+Agent install instructions live in [AUTO_INSTALL.md](AUTO_INSTALL.md). Use that file when installing the extension into the current workspace or the user extension folder.
+
 - Plan first. Do not code until the plan is accepted.
 - Use the smallest possible diff.
 - No unrelated refactors or renames.
