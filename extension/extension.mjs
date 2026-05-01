@@ -355,13 +355,13 @@ async function handleLedgerCommand(context) {
 
   if (raw === "init") {
     const result = await handleLedgerInit({}, context);
-    process.stdout.write(result.content + "\n");
+    await session.log(result.content);
     return;
   }
 
   if (raw === "" || raw === "show") {
     const result = await handleLedgerSummary({}, context);
-    process.stdout.write(result.content + "\n");
+    await session.log(result.content);
     return;
   }
 
@@ -369,13 +369,13 @@ async function handleLedgerCommand(context) {
   const showMatch = raw.match(/^show\s+(\S+)\s+last\s+(\d+)\s+days?$/i);
   if (showMatch) {
     const result = await handleLedgerSummary({ repo: showMatch[1], days: parseInt(showMatch[2], 10) }, context);
-    process.stdout.write(result.content + "\n");
+    await session.log(result.content);
     return;
   }
 
   if (/^top repos this week$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { process.stdout.write("No .ledger/ directory. Run /ledger init first.\n"); return; }
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir), 7);
     const byRepo = {};
     for (const r of records) {
@@ -389,13 +389,13 @@ async function handleLedgerCommand(context) {
     for (const [r, v] of sorted) {
       out += `  ${r.padEnd(40)} sessions: ${v.sessions}  premium: ${v.premiumRequests}\n`;
     }
-    process.stdout.write(out + "\n");
+    await session.log(out);
     return;
   }
 
   if (/^top users this week$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { process.stdout.write("No .ledger/ directory. Run /ledger init first.\n"); return; }
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir), 7);
     const byUser = {};
     for (const r of records) {
@@ -409,13 +409,13 @@ async function handleLedgerCommand(context) {
     for (const [u, v] of sorted) {
       out += `  ${u.padEnd(40)} sessions: ${v.sessions}  premium: ${v.premiumRequests}\n`;
     }
-    process.stdout.write(out + "\n");
+    await session.log(out);
     return;
   }
 
   if (/^status$/i.test(raw)) {
     const dir = ledgerDir;
-    if (!dir) { process.stdout.write("No .ledger/ directory. Run /ledger init first.\n"); return; }
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     let fileCount = 0, recordCount = 0, pendingCount = 0;
     try {
       const files = fs.readdirSync(dir);
@@ -423,11 +423,11 @@ async function handleLedgerCommand(context) {
       pendingCount = files.filter(f => f.endsWith(".pending.json")).length;
       recordCount = readRecords(dir).length;
     } catch (_) {}
-    process.stdout.write(`ledger dir:      ${dir}\nJSONL files:     ${fileCount}\nTotal records:   ${recordCount}\nPending files:   ${pendingCount}\n`);
+    await session.log(`ledger dir:      ${dir}\nJSONL files:     ${fileCount}\nTotal records:   ${recordCount}\nPending files:   ${pendingCount}`);
     return;
   }
 
-  process.stdout.write(`Unknown /ledger subcommand: "${raw}"\nUsage: /ledger [init | show | show <repo> last <N> days | top repos this week | top users this week | status]\n`);
+  await session.log(`Unknown /ledger subcommand: "${raw}"\nUsage: /ledger [init | show | show <repo> last <N> days | top repos this week | top users this week | status]`);
 }
 
 // ─── Session Setup ────────────────────────────────────────────────────────────
@@ -493,7 +493,7 @@ const session = await joinSession({
 
 // ─── Event Handlers ───────────────────────────────────────────────────────────
 
-session.on("session.start", (event) => {
+session.on("session.start", async (event) => {
   const data = event.data;
   sessionId = data.sessionId;
   repo = data.context?.repository ?? null;
@@ -509,9 +509,7 @@ session.on("session.start", (event) => {
   if (ledgerDir) {
     recoverOrphans(ledgerDir, userId);
   } else if (gitRoot) {
-    process.stderr.write(
-      "[copilot-ledger] .ledger/ not found. Run /ledger init to start tracking usage.\n"
-    );
+    await session.log("[copilot-ledger] .ledger/ not found. Run /ledger init to start tracking usage.", { level: "warning" });
   }
 });
 
