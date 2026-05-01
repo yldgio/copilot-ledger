@@ -7,7 +7,7 @@ import {
   safeFileName, computeRelativeCwd, filterByDays,
   aggregateRecords, formatText, formatCsvSummary, formatCsvTeam,
   formatHtmlSummary, formatHtmlTeam, readRecords, buildShutdownRecord,
-  createLedgerRuntime, fmtDuration,
+  createLedgerRuntime, fmtDuration, handleInit,
 } from "./lib.mjs";
 
 // ─── Runtime (with real deps) ────────────────────────────────────────────────
@@ -30,23 +30,15 @@ let sessionStartTime = null;
 // ─── Tool Handlers ───────────────────────────────────────────────────────────
 
 async function handleLedgerInit(_args, _ctx) {
-  // Attempt detection if session.start didn't provide gitRoot
-  if (!gitRoot) {
-    gitRoot = runtime.detectGitRoot(process.cwd());
-  }
-  if (!gitRoot) return { content: "No git root detected. Cannot initialize .ledger/." };
-  const dir = path.join(gitRoot, ".ledger");
-  const alreadyExisted = fs.existsSync(dir);
-  try {
-    if (!alreadyExisted) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, ".gitignore"), "*.pending.json\n", "utf8");
-    }
-    ledgerDir = dir;
-    return { content: alreadyExisted ? `.ledger/ already exists at ${dir}` : `✓ Initialized .ledger/ at ${dir}\n  Added .gitignore to exclude pending files.` };
-  } catch (err) {
-    return { content: `Failed to initialize .ledger/: ${err.message}` };
-  }
+  const result = handleInit({
+    gitRoot,
+    detectGitRoot: (cwd) => runtime.detectGitRoot(cwd),
+    cwd: process.cwd(),
+    fsImpl: fs,
+  });
+  if (result.gitRoot) gitRoot = result.gitRoot;
+  if (result.ledgerDir) ledgerDir = result.ledgerDir;
+  return { content: result.content };
 }
 
 async function handleLedgerSummary(args, _ctx) {

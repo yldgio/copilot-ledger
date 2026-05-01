@@ -227,6 +227,32 @@ export function buildShutdownRecord(data, state) {
   };
 }
 
+// ─── Tool Logic ──────────────────────────────────────────────────────────────
+
+export function handleInit({ gitRoot, detectGitRoot, cwd, fsImpl }) {
+  let root = gitRoot;
+  if (!root) root = detectGitRoot(cwd);
+  if (!root) return { gitRoot: null, ledgerDir: null, content: "No git root detected. Cannot initialize .ledger/." };
+
+  const dir = path.join(root, ".ledger");
+  const alreadyExisted = fsImpl.existsSync(dir);
+  try {
+    if (!alreadyExisted) {
+      fsImpl.mkdirSync(dir, { recursive: true });
+      fsImpl.writeFileSync(path.join(dir, ".gitignore"), "*.pending.json\n", "utf8");
+    }
+    return {
+      gitRoot: root,
+      ledgerDir: dir,
+      content: alreadyExisted
+        ? `.ledger/ already exists at ${dir}`
+        : `✓ Initialized .ledger/ at ${dir}\n  Added .gitignore to exclude pending files.`,
+    };
+  } catch (err) {
+    return { gitRoot: root, ledgerDir: null, content: `Failed to initialize .ledger/: ${err.message}` };
+  }
+}
+
 // ─── JSONL I/O ───────────────────────────────────────────────────────────────
 
 export function readRecords(dir, fsImpl) {

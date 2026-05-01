@@ -465,6 +465,63 @@ describe("recoverOrphans edge cases", () => {
   });
 });
 
+// ─── handleInit ──────────────────────────────────────────────────────────────
+
+describe("handleInit", () => {
+  it("uses provided gitRoot when available", async () => {
+    const { handleInit } = await import("./lib.mjs");
+    const mockFs = {
+      existsSync: vi.fn().mockReturnValue(false),
+      mkdirSync: vi.fn(),
+      writeFileSync: vi.fn(),
+    };
+    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    expect(result.content).toContain("✓ Initialized .ledger/");
+    expect(result.ledgerDir).toContain(".ledger");
+    expect(mockFs.mkdirSync).toHaveBeenCalled();
+  });
+
+  it("falls back to detectGitRoot when gitRoot is null", async () => {
+    const { handleInit } = await import("./lib.mjs");
+    const mockFs = {
+      existsSync: vi.fn().mockReturnValue(false),
+      mkdirSync: vi.fn(),
+      writeFileSync: vi.fn(),
+    };
+    const detectGitRoot = vi.fn().mockReturnValue("/detected/repo");
+    const result = handleInit({ gitRoot: null, detectGitRoot, cwd: "/detected/repo/src", fsImpl: mockFs });
+    expect(detectGitRoot).toHaveBeenCalledWith("/detected/repo/src");
+    expect(result.gitRoot).toBe("/detected/repo");
+    expect(result.content).toContain("✓ Initialized .ledger/");
+  });
+
+  it("returns error when no git root can be found", async () => {
+    const { handleInit } = await import("./lib.mjs");
+    const detectGitRoot = vi.fn().mockReturnValue(null);
+    const result = handleInit({ gitRoot: null, detectGitRoot, cwd: "/tmp", fsImpl: {} });
+    expect(result.content).toBe("No git root detected. Cannot initialize .ledger/.");
+    expect(result.gitRoot).toBeNull();
+  });
+
+  it("reports already exists when .ledger/ is present", async () => {
+    const { handleInit } = await import("./lib.mjs");
+    const mockFs = { existsSync: vi.fn().mockReturnValue(true) };
+    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    expect(result.content).toContain("already exists");
+  });
+
+  it("handles mkdir failure gracefully", async () => {
+    const { handleInit } = await import("./lib.mjs");
+    const mockFs = {
+      existsSync: vi.fn().mockReturnValue(false),
+      mkdirSync: vi.fn().mockImplementation(() => { throw new Error("permission denied"); }),
+    };
+    const result = handleInit({ gitRoot: "/repo", detectGitRoot: vi.fn(), cwd: "/repo", fsImpl: mockFs });
+    expect(result.content).toContain("Failed to initialize");
+    expect(result.content).toContain("permission denied");
+  });
+});
+
 // ─── getUserId ───────────────────────────────────────────────────────────────
 
 describe("getUserId", () => {
