@@ -24,6 +24,8 @@ let gitRoot = null;
 let cwdRelative = ".";
 let ledgerDir = null;
 let promptCount = 0;
+let outputTokensAccum = 0;
+let inputTokensAccum = 0;
 let sessionStartTime = null;
 
 
@@ -274,24 +276,30 @@ session.on("session.start", async (event) => {
   }
 });
 
-session.on("user.message", (_event) => {
+session.on("user.message", (event) => {
   promptCount++;
+  const content = event.data?.transformedContent ?? event.data?.content ?? "";
+  inputTokensAccum += Math.ceil(content.length / 4);
 });
 
-session.on("assistant.message", (_event) => {
-  // Reserved for future per-message tracking
+session.on("assistant.message", (event) => {
+  outputTokensAccum += event.data?.outputTokens ?? 0;
 });
 
 session.on("session.idle", (_event) => {
   if (!ledgerDir || !sessionId) return;
   const pending = {
+    v: 1,
     sessionId,
     repo,
     cwd: cwdRelative,
     user: userId,
     startTime: sessionStartTime,
     lastUpdate: Date.now(),
+    shutdownType: "pending",
     promptCount,
+    outputTokensAccum,
+    inputTokensAccum,
   };
   try {
     fs.writeFileSync(path.join(ledgerDir, `${sessionId}.pending.json`), JSON.stringify(pending), "utf8");
