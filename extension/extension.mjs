@@ -583,3 +583,5 @@ session.on("session.shutdown", (event) => {
     }
   } catch (_) {}
 });
+
+await session.log('ledger extension loaded');
