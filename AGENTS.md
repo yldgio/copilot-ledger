@@ -84,3 +84,11 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+
+If applicable, use RGR to complete the task.
+
+RED: write one test
+GREEN: write the implementation to pass that test
+REPEAT until done
+REFACTOR the code
