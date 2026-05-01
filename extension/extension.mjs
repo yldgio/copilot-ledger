@@ -13,6 +13,12 @@ function getUserId() {
   return "unknown";
 }
 
+function detectGitRoot(cwd) {
+  try {
+    return execSync("git rev-parse --show-toplevel", { encoding: "utf8", cwd: cwd || undefined }).trim();
+  } catch (_) { return null; }
+}
+
 function safeFileName(user) {
   return user.replace(/@/g, "_") + ".jsonl";
 }
@@ -497,7 +503,7 @@ session.on("session.start", async (event) => {
   const data = event.data;
   sessionId = data.sessionId;
   repo = data.context?.repository ?? null;
-  gitRoot = data.context?.gitRoot ?? null;
+  gitRoot = data.context?.gitRoot ?? detectGitRoot(data.context?.cwd) ?? null;
   const cwd = data.context?.cwd ?? null;
   cwdRelative = computeRelativeCwd(cwd, gitRoot);
   sessionStartTime = Date.now();
