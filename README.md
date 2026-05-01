@@ -118,11 +118,12 @@ All data lives in `.ledger/` at the git root. Each user gets their own `.jsonl` 
 ## How It Works
 
 1. Extension loads when Copilot CLI starts
-2. On `session.start`: captures repo, branch, and working directory
-3. On each `user.message`: increments the prompt counter
-4. On `session.idle`: writes a pending checkpoint (gitignored as `*.pending.json`)
-5. On `session.shutdown`: writes the final JSONL record and deletes the pending file
-6. On the next `session.start`: recovers any orphaned `.pending.json` files left by crashed sessions
+2. On extension load/reload and in the `onSessionStart` hook: captures session ID, repo, working directory, and the initial prompt when present
+3. On each `user.message`: increments the prompt counter and estimates input tokens from `transformedContent`
+4. On `assistant.message`: accumulates SDK-provided `outputTokens`
+5. On `session.idle`: writes a pending checkpoint (gitignored as `*.pending.json`)
+6. On `session.shutdown`: writes the final JSONL record and deletes the pending file
+7. On the next `onSessionStart`: recovers any orphaned `.pending.json` files left by crashed sessions
 
 > The `.ledger/` directory must be explicitly initialized with `/ledger init`. The extension will nudge you if it hasn't been set up yet, but will not auto-create it.
 

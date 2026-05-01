@@ -4,10 +4,11 @@ import path from "path";
 import { execSync } from "child_process";
 import os from "os";
 import {
-  safeFileName, computeRelativeCwd, filterByDays,
+  safeFileName, filterByDays,
   aggregateRecords, formatText, formatCsvSummary, formatCsvTeam,
   formatHtmlSummary, formatHtmlTeam, readRecords, buildShutdownRecord,
-  createLedgerRuntime, fmtDuration, handleInit,
+  buildPendingRecord, createLedgerRuntime, fmtDuration,
+  handleInit, recordUserMessage, startLedgerSession,
 } from "./lib.mjs";
 
 // ─── Runtime (with real deps) ────────────────────────────────────────────────
@@ -18,14 +19,19 @@ const runtime = createLedgerRuntime({ fs, execSync, os });
 // ─── State ───────────────────────────────────────────────────────────────────
 
 const userId = runtime.getUserId();
-let sessionId = null;
-let repo = null;
 let gitRoot = null;
-let cwdRelative = ".";
 let ledgerDir = null;
-let promptCount = 0;
-let outputTokensAccum = 0;
-let sessionStartTime = null;
+let usage = {
+  sessionId: null,
+  repo: null,
+  cwdRelative: ".",
+  userId,
+  sessionStartTime: null,
+  promptCount: 0,
+  inputTokensAccum: 0,
+  outputTokensAccum: 0,
+  initialPrompt: null,
+};
 
 
 // ─── Tool Handlers ───────────────────────────────────────────────────────────
@@ -53,7 +59,7 @@ async function handleLedgerSummary(args, _ctx) {
   let records = filterByDays(readRecords(dir, fs), days);
   if (filterRepo) records = records.filter(r => r.repo === filterRepo);
 
-  const label = `${filterRepo ?? repo ?? "all repos"} · last ${days} days`;
+  const label = `${filterRepo ?? usage.repo ?? "all repos"} · last ${days} days`;
   const agg = aggregateRecords(records);
 
   if (format === "csv") return { content: formatCsvSummary(records, label) };
@@ -195,7 +201,32 @@ async function handleLedgerCommand(context) {
 
 // ─── Session Setup ────────────────────────────────────────────────────────────
 
-const session = await joinSession({
+let session;
+
+function initializeLedgerSession(data = {}) {
+  const started = startLedgerSession({
+    sessionId: data?.sessionId ?? session?.sessionId ?? null,
+    userId,
+    cwd: data?.cwd ?? process.cwd(),
+    repo: data?.repository ?? null,
+    initialPrompt: data?.initialPrompt ?? "",
+    detectGitRoot: runtime.detectGitRoot,
+    getLedgerDir: runtime.getLedgerDir,
+  });
+  gitRoot = started.gitRoot;
+  ledgerDir = started.ledgerDir;
+  usage = started.state;
+}
+
+async function recoverOrWarn() {
+  if (ledgerDir) {
+    runtime.recoverOrphans(ledgerDir, userId);
+  } else if (gitRoot && session) {
+    await session.log("[copilot-ledger] .ledger/ not found. Run /ledger init to start tracking usage.", { level: "warning" });
+  }
+}
+
+session = await joinSession({
   tools: [
     {
       name: "ledger-init",
@@ -252,56 +283,33 @@ const session = await joinSession({
       handler: handleLedgerCommand,
     },
   ],
+  hooks: {
+    onSessionStart: async (data) => {
+      initializeLedgerSession(data);
+      await recoverOrWarn();
+    },
+  },
 });
+
+initializeLedgerSession({ sessionId: session.sessionId, cwd: process.cwd() });
+await recoverOrWarn();
 
 // ─── Event Handlers ───────────────────────────────────────────────────────────
 
-session.on("session.start", async (event) => {
-  const data = event.data;
-  sessionId = session.sessionId;
-  repo = data.context?.repository ?? null;
-  gitRoot = data.context?.gitRoot ?? runtime.detectGitRoot(data.context?.cwd) ?? null;
-  const cwd = data.context?.cwd ?? null;
-  cwdRelative = computeRelativeCwd(cwd, gitRoot);
-  sessionStartTime = Date.now();
-  promptCount = 0;
-
-  ledgerDir = runtime.getLedgerDir(gitRoot);
-
-  if (ledgerDir) {
-    runtime.recoverOrphans(ledgerDir, userId);
-  } else if (gitRoot) {
-    await session.log("[copilot-ledger] .ledger/ not found. Run /ledger init to start tracking usage.", { level: "warning" });
-  }
-});
-
 session.on("user.message", (event) => {
-  promptCount++;
-  const content = event.data?.transformedContent ?? event.data?.content ?? "";
-  inputTokensAccum += Math.ceil(content.length / 4);
+  recordUserMessage(usage, event.data?.transformedContent ?? event.data?.content ?? "");
 });
 
 session.on("assistant.message", (event) => {
-  const tokens = event.data?.outputTokens ?? event.data?.tokenCount ?? 0;
-  outputTokensAccum += tokens;
+  usage.outputTokensAccum += event.data?.outputTokens ?? 0;
 });
 
 session.on("session.idle", (_event) => {
-  if (!ledgerDir || !sessionId) return;
-  const pending = {
-    v: 1,
-    sessionId,
-    repo,
-    cwd: cwdRelative,
-    user: userId,
-    startTime: sessionStartTime,
-    lastUpdate: Date.now(),
-    shutdownType: "pending",
-    promptCount,
-    outputTokensAccum,
-  };
+  usage.sessionId = session.sessionId ?? usage.sessionId;
+  if (!ledgerDir || !usage.sessionId) return;
+  const pending = buildPendingRecord(usage);
   try {
-    fs.writeFileSync(path.join(ledgerDir, `${sessionId}.pending.json`), JSON.stringify(pending), "utf8");
+    fs.writeFileSync(path.join(ledgerDir, `${usage.sessionId}.pending.json`), JSON.stringify(pending), "utf8");
   } catch (_) {}
 });
 
@@ -312,8 +320,8 @@ session.on("session.shutdown", (event) => {
   if ((data?.totalPremiumRequests ?? 0) === 0) return;
   if (!ledgerDir) return;
 
-  const state = { sessionId, repo, cwdRelative, userId, sessionStartTime, promptCount };
-  const record = buildShutdownRecord(data, state);
+  usage.sessionId = session.sessionId ?? usage.sessionId;
+  const record = buildShutdownRecord(data, usage);
 
   try {
     const outFile = path.join(ledgerDir, safeFileName(userId));
@@ -322,8 +330,8 @@ session.on("session.shutdown", (event) => {
 
   // Clean up pending file
   try {
-    if (sessionId) {
-      const pendingPath = path.join(ledgerDir, `${sessionId}.pending.json`);
+    if (usage.sessionId) {
+      const pendingPath = path.join(ledgerDir, `${usage.sessionId}.pending.json`);
       if (fs.existsSync(pendingPath)) fs.unlinkSync(pendingPath);
     }
   } catch (_) {}

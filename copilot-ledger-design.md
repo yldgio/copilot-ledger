@@ -163,8 +163,8 @@ interface ShutdownModelMetric {
 
 | Event | Key Fields | Usage |
 |-------|-----------|-------|
-| `user.message` | `transformedContent` (string) | Increment `promptCount` |
-| `assistant.message` | `outputTokens` (int), `tokenCount` (int) | Accumulate `outputTokensAccum` |
+| `user.message` | `transformedContent` (string) | Increment `promptCount`; estimate `inputTokensAccum` |
+| `assistant.message` | `outputTokens` (int) | Accumulate `outputTokensAccum` |
 | `session.idle` | — | Write progressive pending file |
 
 ### 3.8 Real Shutdown Payload (captured)
@@ -326,7 +326,8 @@ Written to `.ledger/{sessionId}.pending.json` during active sessions:
   "lastUpdate": 1777632500000,
   "shutdownType": "pending",
   "promptCount": 3,
-  "outputTokensAccum": 847
+  "outputTokensAccum": 847,
+  "inputTokensAccum": 221
 }
 ```
 
@@ -586,23 +587,21 @@ const session = joinSession({
 // ─── Crash Recovery ──────────────────────────────────────────────────────────
 // Runs once at extension load time
 userId = getUserId();
-// gitRoot/ledgerDir set after session.start provides context
+// gitRoot/ledgerDir set on extension load/reload and refreshed by onSessionStart
 
 // ─── Event Listeners ─────────────────────────────────────────────────────────
 
-session.on("session.start", (event) => {
-  const data = event.data; // StartData
+hooks.onSessionStart = (data) => {
   sessionId = data.sessionId;
-  startTime = data.sessionStartTime || Date.now();
-
-  const ctx = data.context; // WorkingDirectoryContext
-  if (ctx) {
-    gitRoot = ctx.gitRoot || null;
-    repo = ctx.repository || null;
-    cwd = computeRelativeCwd(ctx.cwd, ctx.gitRoot);
-  }
-
+  startTime = Date.now();
+  gitRoot = detectGitRoot(data.cwd);
+  repo = data.repository || gitRoot || null;
+  cwd = computeRelativeCwd(data.cwd, gitRoot);
   ledgerDir = getLedgerDir(gitRoot);
+  if (data.initialPrompt) {
+    promptCount++;
+    inputTokensAccum += estimateTokens(data.initialPrompt);
+  }
 
   // Crash recovery on startup
   recoverOrphans(ledgerDir);
@@ -611,10 +610,11 @@ session.on("session.start", (event) => {
   if (gitRoot && !ledgerDir) {
     process.stderr.write("[copilot-ledger] No .ledger/ found. Run /ledger init to start tracking.\n");
   }
-});
+};
 
 session.on("user.message", (event) => {
   promptCount++;
+  inputTokensAccum += estimateTokens(event.data?.transformedContent);
 });
 
 session.on("assistant.message", (event) => {
@@ -635,6 +635,7 @@ session.on("session.idle", (event) => {
     shutdownType: "pending",
     promptCount,
     outputTokensAccum,
+    inputTokensAccum,
   };
   const filePath = join(ledgerDir, `${sessionId}.pending.json`);
   writeFileSync(filePath, JSON.stringify(pending));

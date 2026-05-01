@@ -46,6 +46,18 @@ describe("computeRelativeCwd", () => {
   });
 });
 
+describe("estimateInputTokens", () => {
+  it("estimates one token per four transformed-content characters", async () => {
+    const { estimateInputTokens } = await import("./lib.mjs");
+    expect(estimateInputTokens("12345")).toBe(2);
+  });
+
+  it("treats missing content as zero tokens", async () => {
+    const { estimateInputTokens } = await import("./lib.mjs");
+    expect(estimateInputTokens(null)).toBe(0);
+  });
+});
+
 describe("fmtNumber", () => {
   it("formats millions", async () => {
     const { fmtNumber } = await import("./lib.mjs");
@@ -276,6 +288,129 @@ describe("buildShutdownRecord", () => {
     const data = { totalPremiumRequests: 1, codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: 5 } };
     const record = buildShutdownRecord(data, state);
     expect(record.codeChanges.filesModified).toBe(5);
+  });
+});
+
+describe("startLedgerSession", () => {
+  it("derives git root, ledger dir, relative cwd, and initial prompt counters in one place", async () => {
+    const { startLedgerSession } = await import("./lib.mjs");
+    const result = startLedgerSession({
+      sessionId: "s1",
+      userId: "dev@test.com",
+      cwd: "/repo/src",
+      repo: "owner/repo",
+      initialPrompt: "hello",
+      detectGitRoot: vi.fn().mockReturnValue("/repo"),
+      getLedgerDir: vi.fn().mockReturnValue("/repo/.ledger"),
+      now: () => 1234,
+    });
+
+    expect(result.gitRoot).toBe("/repo");
+    expect(result.ledgerDir).toBe("/repo/.ledger");
+    expect(result.state).toMatchObject({
+      sessionId: "s1",
+      repo: "owner/repo",
+      cwdRelative: "src",
+      userId: "dev@test.com",
+      sessionStartTime: 1234,
+      promptCount: 1,
+      inputTokensAccum: 2,
+      outputTokensAccum: 0,
+      initialPrompt: "hello",
+    });
+  });
+
+  it("does not use git root as repo identity when repository metadata is missing", async () => {
+    const { startLedgerSession } = await import("./lib.mjs");
+    const result = startLedgerSession({
+      sessionId: "s1",
+      userId: "dev@test.com",
+      cwd: "/repo",
+      repo: null,
+      initialPrompt: "",
+      detectGitRoot: vi.fn().mockReturnValue("/repo"),
+      getLedgerDir: vi.fn().mockReturnValue("/repo/.ledger"),
+      now: () => 1234,
+    });
+
+    expect(result.state.repo).toBeNull();
+  });
+});
+
+describe("buildPendingRecord", () => {
+  it("serializes pending usage with input and output accumulators", async () => {
+    const { buildPendingRecord } = await import("./lib.mjs");
+    const record = buildPendingRecord({
+      sessionId: "s1",
+      repo: "owner/repo",
+      cwdRelative: ".",
+      userId: "dev@test.com",
+      sessionStartTime: 1000,
+      promptCount: 2,
+      inputTokensAccum: 50,
+      outputTokensAccum: 20,
+    }, () => 2000);
+
+    expect(record).toEqual({
+      v: 1,
+      sessionId: "s1",
+      repo: "owner/repo",
+      cwd: ".",
+      user: "dev@test.com",
+      startTime: 1000,
+      lastUpdate: 2000,
+      shutdownType: "pending",
+      promptCount: 2,
+      outputTokensAccum: 20,
+      inputTokensAccum: 50,
+    });
+  });
+});
+
+describe("recordUserMessage", () => {
+  it("skips a user.message that duplicates the already-counted initial prompt", async () => {
+    const { recordUserMessage } = await import("./lib.mjs");
+    const state = {
+      initialPrompt: "reply ok",
+      promptCount: 1,
+      inputTokensAccum: 2,
+    };
+
+    recordUserMessage(state, "<current_datetime>now</current_datetime>\n\nreply ok");
+
+    expect(state.initialPrompt).toBeNull();
+    expect(state.promptCount).toBe(1);
+    expect(state.inputTokensAccum).toBe(2);
+  });
+
+  it("can deduplicate against plain content when transformed content is unavailable", async () => {
+    const { recordUserMessage } = await import("./lib.mjs");
+    const state = {
+      initialPrompt: "reply ok",
+      promptCount: 1,
+      inputTokensAccum: 2,
+    };
+
+    recordUserMessage(state, "reply ok");
+
+    expect(state.initialPrompt).toBeNull();
+    expect(state.promptCount).toBe(1);
+    expect(state.inputTokensAccum).toBe(2);
+  });
+
+  it("counts a normal user.message after the initial prompt", async () => {
+    const { recordUserMessage } = await import("./lib.mjs");
+    const state = {
+      initialPrompt: "first prompt",
+      promptCount: 1,
+      inputTokensAccum: 3,
+    };
+
+    recordUserMessage(state, "second prompt");
+
+    expect(state.initialPrompt).toBeNull();
+    expect(state.promptCount).toBe(2);
+    expect(state.inputTokensAccum).toBe(7);
   });
 });
 

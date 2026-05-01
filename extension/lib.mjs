@@ -22,6 +22,10 @@ export function computeRelativeCwd(cwd, gitRoot) {
   return rel === "" ? "." : rel;
 }
 
+export function estimateInputTokens(content) {
+  return Math.ceil(String(content ?? "").length / 4);
+}
+
 export function fmtNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
@@ -225,6 +229,53 @@ export function buildShutdownRecord(data, state) {
         : (data?.codeChanges?.filesModified ?? 0),
     },
   };
+}
+
+export function startLedgerSession({ sessionId, userId, cwd, repo, initialPrompt, detectGitRoot, getLedgerDir, now = Date.now }) {
+  const gitRoot = detectGitRoot(cwd);
+  const inputTokensAccum = estimateInputTokens(initialPrompt);
+  return {
+    gitRoot,
+    ledgerDir: getLedgerDir(gitRoot),
+    state: {
+      sessionId,
+      repo: repo ?? null,
+      cwdRelative: computeRelativeCwd(cwd, gitRoot),
+      userId,
+      sessionStartTime: now(),
+      promptCount: initialPrompt ? 1 : 0,
+      inputTokensAccum,
+      outputTokensAccum: 0,
+      initialPrompt: initialPrompt || null,
+    },
+  };
+}
+
+export function buildPendingRecord(state, now = Date.now) {
+  return {
+    v: 1,
+    sessionId: state.sessionId,
+    repo: state.repo,
+    cwd: state.cwdRelative,
+    user: state.userId,
+    startTime: state.sessionStartTime,
+    lastUpdate: now(),
+    shutdownType: "pending",
+    promptCount: state.promptCount,
+    outputTokensAccum: state.outputTokensAccum,
+    inputTokensAccum: state.inputTokensAccum,
+  };
+}
+
+export function recordUserMessage(state, transformedContent) {
+  const content = transformedContent ?? "";
+  if (state.initialPrompt && content.includes(state.initialPrompt)) {
+    state.initialPrompt = null;
+    return;
+  }
+  state.initialPrompt = null;
+  state.promptCount++;
+  state.inputTokensAccum += estimateInputTokens(content);
 }
 
 // ─── Tool Logic ──────────────────────────────────────────────────────────────
