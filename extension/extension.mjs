@@ -7,8 +7,8 @@ import os from "os";
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function getUserId() {
+  try { return execSync("git config --local user.email", { encoding: "utf8" }).trim(); } catch (_) {}
   try { return execSync("git config --global user.email", { encoding: "utf8" }).trim(); } catch (_) {}
-  try { return execSync("git config user.email", { encoding: "utf8" }).trim(); } catch (_) {}
   try { return os.userInfo().username; } catch (_) {}
   return "unknown";
 }
@@ -97,7 +97,6 @@ let gitRoot = null;
 let cwdRelative = ".";
 let ledgerDir = null;
 let promptCount = 0;
-let outputTokensAccum = 0;
 let sessionStartTime = null;
 
 // ─── JSONL I/O ───────────────────────────────────────────────────────────────
@@ -508,7 +507,6 @@ session.on("session.start", async (event) => {
   cwdRelative = computeRelativeCwd(cwd, gitRoot);
   sessionStartTime = Date.now();
   promptCount = 0;
-  outputTokensAccum = 0;
 
   ledgerDir = getLedgerDir(gitRoot);
 
@@ -523,9 +521,8 @@ session.on("user.message", (_event) => {
   promptCount++;
 });
 
-session.on("assistant.message", (event) => {
-  const data = event.data;
-  outputTokensAccum += data?.outputTokens ?? data?.tokenCount ?? 0;
+session.on("assistant.message", (_event) => {
+  // Reserved for future per-message tracking
 });
 
 session.on("session.idle", (_event) => {
@@ -570,7 +567,9 @@ session.on("session.shutdown", (event) => {
     codeChanges: {
       linesAdded: data?.codeChanges?.linesAdded ?? 0,
       linesRemoved: data?.codeChanges?.linesRemoved ?? 0,
-      filesModified: data?.codeChanges?.filesModified?.length ?? 0,
+      filesModified: Array.isArray(data?.codeChanges?.filesModified)
+        ? data.codeChanges.filesModified.length
+        : (data?.codeChanges?.filesModified ?? 0),
     },
   };
 
