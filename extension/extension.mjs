@@ -25,7 +25,6 @@ let cwdRelative = ".";
 let ledgerDir = null;
 let promptCount = 0;
 let outputTokensAccum = 0;
-let inputTokensAccum = 0;
 let sessionStartTime = null;
 
 
@@ -283,7 +282,8 @@ session.on("user.message", (event) => {
 });
 
 session.on("assistant.message", (event) => {
-  outputTokensAccum += event.data?.outputTokens ?? 0;
+  const tokens = event.data?.outputTokens ?? event.data?.tokenCount ?? 0;
+  outputTokensAccum += tokens;
 });
 
 session.on("session.idle", (_event) => {
@@ -299,7 +299,6 @@ session.on("session.idle", (_event) => {
     shutdownType: "pending",
     promptCount,
     outputTokensAccum,
-    inputTokensAccum,
   };
   try {
     fs.writeFileSync(path.join(ledgerDir, `${sessionId}.pending.json`), JSON.stringify(pending), "utf8");
