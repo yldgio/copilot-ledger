@@ -257,7 +257,7 @@ const session = await joinSession({
 
 session.on("session.start", async (event) => {
   const data = event.data;
-  sessionId = data.sessionId;
+  sessionId = session.sessionId;
   repo = data.context?.repository ?? null;
   gitRoot = data.context?.gitRoot ?? runtime.detectGitRoot(data.context?.cwd) ?? null;
   const cwd = data.context?.cwd ?? null;
