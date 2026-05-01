@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem with copilot-ledger.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include secrets, private prompts, or raw `.ledger/*.jsonl` files.
+  - type: input
+    id: copilot-cli-version
+    attributes:
+      label: Copilot CLI version
+      description: Run the relevant CLI version command and paste the result.
+    validations:
+      required: true
+  - type: dropdown
+    id: install-location
+    attributes:
+      label: Install location
+      options:
+        - User extension folder
+        - Workspace extension folder
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, macOS 15, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal reproducible sequence.
+      placeholder: |
+        1. Install extension using ...
+        2. Run ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or screenshots
+      description: Remove secrets, private prompts, user identifiers, and organization-specific details.

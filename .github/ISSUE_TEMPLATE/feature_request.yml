@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose an improvement or new capability.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Please focus on the problem and workflow before implementation details.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior or user workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: privacy-security
+    attributes:
+      label: Privacy and security considerations
+      description: Note any impact on stored usage data, prompts, repository metadata, or secrets.
+  - type: checkboxes
+    id: contribution-policy
+    attributes:
+      label: Contribution policy
+      options:
+        - label: I understand this project accepts issues first and pull requests only after maintainer agreement.
+          required: true

@@ -47,6 +47,21 @@ Both scripts install `extension/extension.mjs` and `extension/lib.mjs` to `~/.co
 
 ---
 
+## Project Docs
+
+| Document | Purpose |
+|----------|---------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to report issues and propose changes |
+| [SECURITY.md](SECURITY.md) | How to report vulnerabilities |
+| [SUPPORT.md](SUPPORT.md) | Where to get help |
+| [CHANGELOG.md](CHANGELOG.md) | Notable project changes |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [MAINTAINERS.md](MAINTAINERS.md) | Maintainer responsibilities and decisions |
+| [AUTO_INSTALL.md](AUTO_INSTALL.md) | Agent install instructions |
+| [copilot-ledger-design.md](copilot-ledger-design.md) | Technical design details |
+
+---
+
 ## Commands Reference
 
 All commands use the `/ledger` slash command:
