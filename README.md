@@ -8,28 +8,26 @@ A GitHub Copilot CLI extension that transparently collects usage data — tokens
 
 > **Requires:** [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) (not VS Code Copilot).
 
-Replace `{owner}` with the GitHub owner or organization that hosts this repository.
-
 **Unix/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/{owner}/copilot-ledger/main/install.sh | COPILOT_LEDGER_RAW_BASE=https://raw.githubusercontent.com/{owner}/copilot-ledger/main bash
+curl -fsSL https://raw.githubusercontent.com/yldgio/copilot-ledger/main/install.sh | COPILOT_LEDGER_RAW_BASE=https://raw.githubusercontent.com/yldgio/copilot-ledger/main bash
 ```
 
 Or from a clone:
 ```bash
-git clone https://github.com/{owner}/copilot-ledger.git
+git clone https://github.com/yldgio/copilot-ledger.git
 cd copilot-ledger
 ./install.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:COPILOT_LEDGER_RAW_BASE = "https://raw.githubusercontent.com/{owner}/copilot-ledger/main"; irm "$($env:COPILOT_LEDGER_RAW_BASE)/install.ps1" | iex
+$env:COPILOT_LEDGER_RAW_BASE = "https://raw.githubusercontent.com/yldgio/copilot-ledger/main"; irm "$($env:COPILOT_LEDGER_RAW_BASE)/install.ps1" | iex
 ```
 
 Or from a clone:
 ```powershell
-git clone https://github.com/{owner}/copilot-ledger.git
+git clone https://github.com/yldgio/copilot-ledger.git
 cd copilot-ledger
 .\install.ps1
 ```
