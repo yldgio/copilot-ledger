@@ -51,8 +51,8 @@ async function handleLedgerSummary(args, _ctx) {
   const format = args?.format ?? "text";
   const filterRepo = args?.repo ?? null;
 
-  const dir = ledgerDir;
-  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  const dir = getOrFindLedgerDir();
+  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   let records = filterByDays(readRecords(dir, fs), days);
   if (filterRepo) records = records.filter(r => r.repo === filterRepo);
@@ -70,8 +70,8 @@ async function handleLedgerUser(args, _ctx) {
   const days = args?.days ?? 30;
   const format = args?.format ?? "text";
 
-  const dir = ledgerDir;
-  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  const dir = getOrFindLedgerDir();
+  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   let records = filterByDays(readRecords(dir, fs), days);
   records = records.filter(r => r.user === targetUser);
@@ -88,8 +88,8 @@ async function handleLedgerTeam(args, _ctx) {
   const days = args?.days ?? 30;
   const format = args?.format ?? "text";
 
-  const dir = ledgerDir;
-  if (!dir || !fs.existsSync(dir)) return { content: "No .ledger/ directory found. Run /ledger init first." };
+  const dir = getOrFindLedgerDir();
+  if (!dir) return { content: "No .ledger/ directory found. Run /ledger init first." };
 
   const records = filterByDays(readRecords(dir, fs), days);
 
@@ -141,8 +141,8 @@ async function handleLedgerCommand(context) {
   }
 
   if (/^top repos this week$/i.test(raw)) {
-    const dir = ledgerDir;
-    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    const dir = getOrFindLedgerDir();
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir, fs), 7);
     const byRepo = {};
     for (const r of records) {
@@ -161,8 +161,8 @@ async function handleLedgerCommand(context) {
   }
 
   if (/^top users this week$/i.test(raw)) {
-    const dir = ledgerDir;
-    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    const dir = getOrFindLedgerDir();
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     const records = filterByDays(readRecords(dir, fs), 7);
     const byUser = {};
     for (const r of records) {
@@ -181,8 +181,8 @@ async function handleLedgerCommand(context) {
   }
 
   if (/^status$/i.test(raw)) {
-    const dir = ledgerDir;
-    if (!dir || !fs.existsSync(dir)) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
+    const dir = getOrFindLedgerDir();
+    if (!dir) { await session.log("No .ledger/ directory. Run /ledger init first."); return; }
     let fileCount = 0, recordCount = 0, pendingCount = 0;
     try {
       const files = fs.readdirSync(dir);
@@ -205,12 +205,23 @@ function initializeLedgerSession(data = {}) {
   const started = startLedgerSession({
     sessionId: data?.sessionId ?? session?.sessionId ?? null,
     userId,
-    repoDir: data?.cwd ?? null,
+    repoDir: data?.cwd ?? process.cwd(),
     initialPrompt: data?.initialPrompt ?? "",
   });
-  repoDir = data?.cwd ?? repoDir;
+  repoDir = data?.cwd ?? repoDir ?? process.cwd();
   ledgerDir = started.ledgerDir;
   usage = started.state;
+}
+
+function getOrFindLedgerDir() {
+  if (ledgerDir && fs.existsSync(ledgerDir)) return ledgerDir;
+  const candidate = path.join(repoDir ?? process.cwd(), ".ledger");
+  if (fs.existsSync(candidate)) {
+    ledgerDir = candidate;
+    repoDir = repoDir ?? process.cwd();
+    return ledgerDir;
+  }
+  return null;
 }
 
 async function recoverOrWarn() {
